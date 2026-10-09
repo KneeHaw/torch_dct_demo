@@ -1,4 +1,4 @@
-# Metodi del Calcolo Scientifico
+0# Metodi del Calcolo Scientifico
 # Progetto_2
 # Mohammad Alì Manan (817205)
 # Francesco Porto (816042)
@@ -209,3 +209,94 @@ plt.xlabel('MatrixSize', fontsize=12)
 plt.ylabel('ExecutionTime', fontsize=12)
 plt.title('Comparison between DCT2 (SciPy vs Our)', fontsize=15)
 plt.legend(title='Legend', bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def idct_matrix(N, norm=None, dtype=torch.float32, device=None):
+    global totals
+
+    scale = torch.ones(N-1)
+    scalex0 = 1
+    if norm == "ortho":
+        scale = scale / ((2*N) ** 0.5)
+        scalex0 = 1 / (N ** 0.5)
+    n = torch.arange(1, N, dtype=dtype, device=device)
+    k = n.unsqueeze(1)
+    C = scale.unsqueeze(1) * (2 * torch.cos(torch.pi * n * (2 * k + 1) / (2 * N)))   # (N, N)
+    totals["muls"] += 2 * N*N
+    totals["cos"] += N*N
+    return C, scalex0
+
+def idct_1d(x, norm, axis):
+    C, scalex0 = idct_matrix(x.shape[axis], norm, x.dtype, x.device)
+    A = torch.zeros_like(x.transpose(axis, -1))
+    A[0, 0, 0] = x[0, 0, 0] * scalex0
+    B = torch.zeros_like(x.transpose(axis, -1))
+    B[1:, 1:, 1:] = x[1:, 1:, 1:].transpose(axis, -1) @ C.T 
+    y = A + B         # apply along last dim
+    totals["muls"] += x.shape[0] * (C.shape[0] * prod(y.shape))
+    return y.transpose(axis, -1)             # put the axis back
+
+def idct_Nd(x, norm=None, axis=0):
+    assert norm in (None, "ortho")
+    assert axis >= 0
+    if axis >= x.ndim:                        # base case
+        return x
+    return idct_Nd(idct_1d(x, norm, axis), norm, axis + 1)
+
+
+
+import torch
+
+def dct_vec(vec, coeff, N):
+    y = torch.zeros(N, N)  
+    for k in range(N):
+        for n in range(N):
+            y[k, n] = coeff[k] * 2 * torch.sum(torch.tensor([vec[n] * torch.cos(torch.tensor(torch.pi * k * (2*n + 1) / (2*N)))]))
+    return y
+
+def dct_Nd(x: torch.Tensor, norm=None, axis=0):
+    s = x.shape
+    assert norm in [None, "ortho"]
+    assert axis in [-1] + list(range(0, len(s)))
+    
+    if axis >= x.ndim:                        # base case
+            return x
+    N = s[axis]
+    
+    _x = torch.transpose(x, axis, -1).unsqueeze(0)
+    _x = _x.reshape(-1, N)
+    _x = [a.squeeze() for a in torch.split(_x, 1, 0)]
+    coeffs = [1 for _ in range(N)] if norm==None else [torch.sqrt(torch.tensor([1 / (4*N)]))] + [torch.sqrt(torch.tensor([1 / (2*N)])) for _ in range(N-1)]
+    slices = []
+    for sample in _x:
+        slices.append(dct_vec(sample, coeffs))
+    
+    recons = None
+    
+    return dct_Nd(recons, norm, axis+=1)
